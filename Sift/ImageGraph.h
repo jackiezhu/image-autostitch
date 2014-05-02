@@ -18,6 +18,7 @@
 #include "opencv2/nonfree/features2d.hpp"
 #include "opencv2/nonfree/nonfree.hpp"     //included for SurfFeatureDector
 #include "opencv2/legacy/legacy.hpp"       //included for BruteForceMatcher
+#include "opencv2/video/tracking.hpp"      //estimate affine matrix with ransac
 #include <queue>
 
 #include "Structures.h"
@@ -31,12 +32,22 @@ public:
     cv::Mat findTranformMat(int dest, int src);    //find the transform matrix from src to dest
     cv::Size singleImageSize();                    //get the size of a single image.
     cv::Mat getTransFormedImg(int imgID, cv::Mat H, cv::Size size); //warp the src image to the given size of image.
+    
+    //Affine transform
+    cv::Mat getAffineTransFormedImg(int imgID, cv::Mat H, cv::Size size);    
+    
 private:
     std::vector<ImageNode> vecImg; // used to store the node
     std::vector<EdgeNode *> head;  //used to store the edge
     void addEdges();
-    void calTrasformMatrix(ImageNode img1, ImageNode img2, cv::Mat &one2two, cv::Mat &two2one);
+    void calHomographyMatrix(ImageNode img1, ImageNode img2, cv::Mat &one2two, cv::Mat &two2one);
     void deleteNode(EdgeNode *head); //only used in destructor to delete the node.
+    void getSIFTKeyPointsDescriptor(ImageNode &img);  //compute keypoints and sift descriptor for one image
+    
+    //Affine transform
+    void addAffineEdges();      //the relation between two images is Affine transform.
+    void calAffineMatrix(ImageNode img1, ImageNode img2, cv::Mat &one2two, cv::Mat &two2one);
+
 };
 
 

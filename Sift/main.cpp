@@ -15,6 +15,7 @@
 #include "opencv2/nonfree/features2d.hpp"
 #include "opencv2/nonfree/nonfree.hpp"     //included for SurfFeatureDector
 #include "opencv2/legacy/legacy.hpp"       //included for BruteForceMatcher
+#include "opencv2/video/tracking.hpp"      //estimate affine matrix with ransac
 
 #include "ImageGraph.h"
 
@@ -28,42 +29,45 @@ uchar getColor(uchar dest, uchar src);
 /** @function main */
 int main( int argc, char** argv )
 {
-    string dir = "/Users/JackieZhu/Documents/work/research/experiment/VisualSizeDataset/ChesterRiverside/";
-    const int IMGCNT = 12;
+    string dir = "/Users/JackieZhu/Documents/work/research/test/";
+    const int IMGCNT = 56;
     vector<string> imgs;
     for (int i=0; i<IMGCNT; i++) {
         string nu = itos(i);
-        string img = dir + nu + ".jpg";
+        string img = dir + nu + ".tif";
         //cout << img << endl;
         imgs.push_back(img);
     }
+    cout << imgs.size() << endl;
     ImageGraph IG(imgs);
-    
+    IG.displayGraph();
+   // system("pause");
     //the final image's max size should be (images * rows, images * cols)
     Size sz = IG.singleImageSize();
-    Size finalSize = Size(sz.width * (int)imgs.size(), sz.height * 1.5);
+    Size finalSize = Size(sz.width * 7, sz.height * 7);
     Mat final;
     final.create(finalSize.height, finalSize.width, CV_8UC3);
    // namedWindow("aa");
     //imshow("aa", final);
-    for (int i=0; i<IMGCNT-1; i++) {
+    for (int i=0; i<IMGCNT; i++) {
         cout << i << endl;
-        Mat H = IG.findTranformMat(0, i);
+        //Mat H = IG.findTranformMat(0, i);
+        Mat H = IG.findTranformMat(49, i);
         Mat ig = IG.getTransFormedImg(i, H, finalSize);
-        //string name = "res"+itos(i);
-       // namedWindow(name);
-        //imshow(name, ig);
+        //Mat ig = IG.getAffineTransFormedImg(i, H, finalSize);
+        string name = "res"+itos(i);
+        //imwrite(dir + name +".jpg", ig);
         registerImage(final, ig);
     }
     
-    namedWindow("stitched");
-    imwrite(dir+"res.jpg", final);
-    imshow("stitched", final);
-    
-    
+   // namedWindow("stitched");
+    imwrite(dir+"parama2.jpg", final);
+    //imshow("stitched", final);
+    cv::waitKey(0);
+    /*
     //cv::initModule_nonfree();
-    Mat img_1 = imread( "/Users/JackieZhu/Documents/work/research/experiment/VisualSizeDataset/ChesterRiverside/0.jpg");
-    Mat img_2 = imread( "/Users/JackieZhu/Documents/work/research/experiment/VisualSizeDataset/ChesterRiverside/2.jpg");
+    Mat img_1 = imread( "/Users/JackieZhu/Documents/work/research/256主室南壁原始数据150DPI/G9PQ0282.tif");
+    Mat img_2 = imread( "/Users/JackieZhu/Documents/work/research/256主室南壁原始数据150DPI/G9PQ0283.tif");
     cout << img_1.channels() << endl;
     if( !img_1.data || !img_2.data )
     { return -1; }
@@ -99,27 +103,29 @@ int main( int argc, char** argv )
     vector<Point2f> goodpoints1;
     vector<Point2f> goodpoints2;
     for (int i=0; i<matches.size(); i++) {
-        if (matches[i].distance <= 0.2 * max_dist) {
+        if (matches[i].distance <= 0.6 * max_dist) {
             goodmatches.push_back(matches[i]);
             goodpoints1.push_back(keypoints_1[matches[i].queryIdx].pt);
             goodpoints2.push_back(keypoints_2[matches[i].trainIdx].pt);
         }
     }
-    Mat H = findHomography(Mat(goodpoints2), Mat(goodpoints1), CV_RANSAC);
+    Mat img_matches;
+    drawMatches( img_1, keypoints_1, img_2, keypoints_2, matches, img_matches );
     
-    Mat stitchedImg;
-    warpPerspective(img_2, stitchedImg, H, Size(img_1.cols+img_2.cols, img_1.rows+img_2.rows));
-    cout << img_1.size() << " " << img_2.size() << endl;
-    cout << stitchedImg.size() << endl;
-    //namedWindow("result1");
-   // imshow("result1", stitchedImg);
-    Mat ROI(stitchedImg, Rect(0, 0, img_1.cols, img_1.rows));
-    img_1.copyTo(ROI);
-   // namedWindow("result");
-   // imshow("result", stitchedImg);
+    cv::Mat warp_mat = cv::estimateRigidTransform(goodpoints2, goodpoints1, true);
+    Mat warp_dist;
+    warp_dist = Mat::zeros( img_1.rows, img_1.cols*2, img_1.type() );
+    warpAffine( img_2, warp_dist, warp_mat, warp_dist.size() );
 
+    namedWindow("result1");
+    imshow("result1", warp_dist);
+    Mat ROI(warp_dist, Rect(0, 0, img_1.cols, img_1.rows));
+    img_1.copyTo(ROI);
+    namedWindow("result");
+    imshow("result", warp_dist);
+    imwrite("/Users/JackieZhu/Documents/work/research/Affine.jpg", warp_dist);
     waitKey(0);
-    
+    */
     return 0;
 }
 

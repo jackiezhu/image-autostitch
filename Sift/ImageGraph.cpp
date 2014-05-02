@@ -18,16 +18,24 @@ ImageGraph::ImageGraph(std::vector<std::string> imgs) {
     for (int i=0; i<imgcnt; i++) {
         std::cout << imgs[i] << std::endl;
         vecImg[i].img = cv::imread(imgs[i]);
-       // cv::namedWindow("reeeee");
+        getSIFTKeyPointsDescriptor(vecImg[i]);
+        // cv::namedWindow("reeeee");
        // cv::imshow("reeeee", vecImg[i].img);
         //cv::waitKey(0);
         //cv::destroyWindow("reeeee");
     }
-    
     head.resize(imgcnt);
+    std::cout << "adf" << std::endl;
+    //addAffineEdges();
     addEdges();
 }
-
+void ImageGraph::getSIFTKeyPointsDescriptor(ImageNode &img) {
+    cv::SiftFeatureDetector detector;
+    cv::Mat imgM = img.img;
+    detector.detect( imgM, img.keypoints );
+    cv::SiftDescriptorExtractor extractor;
+    extractor.compute(imgM, img.keypoints, img.descriptors);
+}
 
 /*
  *destructure the Image Graph
@@ -68,28 +76,12 @@ cv::Mat ImageGraph::getTransFormedImg(int imgID, cv::Mat H, cv::Size size) {
 }
 
 
-void ImageGraph::calTrasformMatrix(ImageNode img1, ImageNode img2, cv::Mat &one2two, cv::Mat &two2one) {
-    cv::SiftFeatureDetector detector;
-    cv::Mat img_1 = img1.img;
-    cv::Mat img_2 = img2.img;
-    
-    std::vector<cv::KeyPoint> keypoints_1, keypoints_2;
-    
-    detector.detect( img_1, keypoints_1 );
-    detector.detect( img_2, keypoints_2 );
-    
-    //-- Step 2: Calculate descriptors (feature vectors)
-    cv::SiftDescriptorExtractor extractor;
-    
-    cv::Mat descriptors_1, descriptors_2;
-    
-    extractor.compute( img_1, keypoints_1, descriptors_1 );
-    extractor.compute( img_2, keypoints_2, descriptors_2 );
+void ImageGraph::calHomographyMatrix(ImageNode img1, ImageNode img2, cv::Mat &one2two, cv::Mat &two2one) {
 
-    //-- Step 3: Matching descriptor vectors with a brute force matcher
+    //Matching descriptor vectors with a brute force matcher
     cv::BruteForceMatcher< cv::L2<float> > matcher;
     std::vector< cv::DMatch > matches;
-    matcher.match( descriptors_1, descriptors_2, matches );
+    matcher.match( img1.descriptors, img2.descriptors, matches );
     
     double max_dist = 0;
     for (int i=0; i<matches.size(); i++) {
@@ -104,8 +96,8 @@ void ImageGraph::calTrasformMatrix(ImageNode img1, ImageNode img2, cv::Mat &one2
     for (int i=0; i<matches.size(); i++) {
         if (matches[i].distance <= 0.2 * max_dist) {
             goodmatches.push_back(matches[i]);
-            goodpoints1.push_back(keypoints_1[matches[i].queryIdx].pt);
-            goodpoints2.push_back(keypoints_2[matches[i].trainIdx].pt);
+            goodpoints1.push_back(img1.keypoints[matches[i].queryIdx].pt);
+            goodpoints2.push_back(img2.keypoints[matches[i].trainIdx].pt);
         }
     }
     two2one = findHomography(cv::Mat(goodpoints2), cv::Mat(goodpoints1), CV_RANSAC);
@@ -116,19 +108,37 @@ void ImageGraph::calTrasformMatrix(ImageNode img1, ImageNode img2, cv::Mat &one2
 //TODO:how to judge two images are adjecent
 void ImageGraph::addEdges() {
     int imgcnt = (int) vecImg.size();
-    for (int i=1; i<imgcnt; i++) {
+    for(int p=0; p<8; p++) {
+        std::cout << "row " << p << std::endl;
+        for (int i=1; i<7; i++) {
+            std::cout << "  img " << i << std::endl;
+            cv::Mat one2two, two2one;
+            calHomographyMatrix(vecImg[p*7+i-1], vecImg[p*7+i], one2two, two2one);
+            
+            EdgeNode *i2im1 = new EdgeNode(two2one, p*7+i-1);
+            EdgeNode *im12i = new EdgeNode(one2two, p*7+i);
+            i2im1->next = head[p*7+i];
+            head[p*7+i] = i2im1;         //add an edge from i to i-1
+            im12i->next = head[p*7+i-1];
+            head[p*7+i-1] = im12i;       //add an edge from i-1 to i
+        }
+    }
+    for (int i=13; i<imgcnt; i+=7) {
+        std::cout << "  col " << i << std::endl;
         cv::Mat one2two, two2one;
-        calTrasformMatrix(vecImg[i-1], vecImg[i], one2two, two2one);
-        EdgeNode *i2im1 = new EdgeNode(two2one, i-1);
+        calHomographyMatrix(vecImg[i-7], vecImg[i], one2two, two2one);
+        
+        EdgeNode *i2im1 = new EdgeNode(two2one, i-7);
         EdgeNode *im12i = new EdgeNode(one2two, i);
         i2im1->next = head[i];
         head[i] = i2im1;         //add an edge from i to i-1
-        im12i->next = head[i-1];
-        head[i-1] = im12i;       //add an edge from i-1 to i
+        im12i->next = head[i-7];
+        head[i-7] = im12i;       //add an edge from i-1 to i
     }
+    
 }
 
-/* 
+/*
  *use broad first search to find the closest path from src to dest
  *and calculate the transform matrix.
  */
@@ -144,6 +154,7 @@ cv::Mat ImageGraph::findTranformMat(int dest, int src) {
     while (!Q.empty()) {
         BFSNode f = Q.front();
         Q.pop();
+        std::cout << f.nodeid << std::endl;
         if (f.nodeid == dest) return f.H;         // if find, return
         for (EdgeNode *i=head[f.nodeid]; i!=NULL; i=i->next) {
             if (visit[i->nodeid]) continue;
@@ -167,4 +178,111 @@ void ImageGraph::displayGraph() {
             iter = iter->next;
         }
     }
+}
+
+
+
+/****************************************************
+ *Affine transform functions are blow
+ *The transform matrix between two images is 3*3
+ *in order to adapt to continuious transforms
+ ***************************************************/
+
+/*
+ *calculate Affine Matrixes that transform image1 to 
+ *image2 and image2 to image1.
+ */
+void ImageGraph::calAffineMatrix(ImageNode img1, ImageNode img2, cv::Mat &one2two, cv::Mat &two2one) {
+    cv::BruteForceMatcher< cv::L2<float> > matcher;
+    std::vector< cv::DMatch > matches;
+    matcher.match( img1.descriptors, img2.descriptors, matches );
+    
+    double max_dist = 0;
+    for (int i=0; i<matches.size(); i++) {
+        if (matches[i].distance > max_dist) {
+            max_dist = matches[i].distance;
+        }
+    }
+    
+    std::vector<cv::DMatch> goodmatches;
+    std::vector<cv::Point2f> goodpoints1;
+    std::vector<cv::Point2f> goodpoints2;
+    for (int i=0; i<matches.size(); i++) {
+        if (matches[i].distance <= max_dist) {
+            goodmatches.push_back(matches[i]);
+            goodpoints1.push_back(img1.keypoints[matches[i].queryIdx].pt);
+            goodpoints2.push_back(img2.keypoints[matches[i].trainIdx].pt);
+        }
+    }
+  //  cv::Mat outp;
+  //  cv::drawMatches(img1.img, img1.keypoints, img2.img, img2.keypoints, goodmatches, outp);
+  ////  cv::namedWindow("aaa");
+//cv::imshow("aaa", outp);
+  //  cvWaitKey(0);
+    cv::Mat t2o = cv::estimateRigidTransform(goodpoints1, goodpoints2, true);
+    std::cout << t2o.rows << std::endl;
+    assert(t2o.rows == 3);
+    one2two = cv::Mat::zeros(3, 3, CV_64F);
+    std::cout << goodpoints1.size() << " " << goodpoints2.size() << std::endl;
+    std::cout << "t2o:  " << std::endl;
+    std::cout << t2o << std::endl;
+    cv::Mat l = (cv::Mat_<double>(1,3)<< 0,0,1);
+    t2o.row(0).copyTo(one2two.row(0));
+    t2o.row(1).copyTo(one2two.row(1));
+    l.copyTo(one2two.row(2));
+    
+    cv::Mat o2t = cv::estimateRigidTransform(goodpoints2, goodpoints1, true);
+    assert(o2t.rows == 3);
+    two2one = cv::Mat::zeros(3, 3, CV_64F);
+    o2t.row(0).copyTo(two2one.row(0));
+    o2t.row(1).copyTo(two2one.row(1));
+    l.copyTo(two2one.row(2));
+    std::cout << "two2one:" << std::endl;
+    std::cout << two2one << std::endl;
+    std::cout << "one2two" << std::endl;
+    std::cout << one2two << std::endl;
+    //std::cout << "asdf  " << two2one << std::endl;
+ //   std::cout << "row 0: " << t2o.row(0) << std::endl;
+ //   std::cout << "row 1: " << t2o.row(1) << std::endl;
+  //  std::cout << "row 2: " << l << std::endl;
+  //  std::cout << "xxx " << t2o << std::endl;
+  //  std::cout << "yyy " << one2two << std::endl;
+
+}
+
+
+
+
+/*
+ *add an edge between two image nodes.
+ *the transform matrix is Affine Matrix.
+ */
+void ImageGraph::addAffineEdges() {
+    int imgcnt = (int) vecImg.size();
+    for (int i=1; i<imgcnt; i++) {
+        cv::Mat one2two = cv::Mat::zeros(3, 3, CV_64F);
+        cv::Mat two2one = cv::Mat::zeros(3, 3, CV_64F);;
+        calAffineMatrix(vecImg[i-1], vecImg[i], one2two, two2one);
+        EdgeNode *i2im1 = new EdgeNode(two2one, i-1);
+        EdgeNode *im12i = new EdgeNode(one2two, i);
+        i2im1->next = head[i];
+        head[i] = i2im1;         //add an edge from i to i-1
+        im12i->next = head[i-1];
+        head[i-1] = im12i;       //add an edge from i-1 to i
+    }
+}
+
+
+/*
+ *warp the src image using AffineTransForm to the given size of image.
+ */
+cv::Mat ImageGraph::getAffineTransFormedImg(int imgID, cv::Mat H, cv::Size size) {
+    cv::Mat affineM = cv::Mat::zeros(2, 3, CV_64F);
+    H.row(0).copyTo(affineM.row(0));
+    H.row(1).copyTo(affineM.row(1));
+    std::cout << affineM << std::endl;
+    cv::Mat warp_dist;
+    warp_dist = cv::Mat::zeros( size, vecImg[imgID].img.type() );
+    cv::warpAffine( vecImg[imgID].img, warp_dist, affineM, warp_dist.size() );
+    return warp_dist;
 }
