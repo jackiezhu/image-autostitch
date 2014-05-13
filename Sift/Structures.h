@@ -13,6 +13,8 @@
 
 struct ImageNode {
     cv::Mat img;
+    std::vector<cv::KeyPoint> keypoints;
+    cv::Mat descriptors;
 };
 
 struct EdgeNode {

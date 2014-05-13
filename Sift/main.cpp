@@ -29,6 +29,9 @@ uchar getColor(uchar dest, uchar src);
 /** @function main */
 int main( int argc, char** argv )
 {
+    
+
+    
     string dir = "/Users/JackieZhu/Documents/work/research/test/";
     const int IMGCNT = 56;
     vector<string> imgs;
@@ -41,10 +44,12 @@ int main( int argc, char** argv )
     cout << imgs.size() << endl;
     ImageGraph IG(imgs);
     IG.displayGraph();
+
    // system("pause");
     //the final image's max size should be (images * rows, images * cols)
     Size sz = IG.singleImageSize();
     Size finalSize = Size(sz.width * 7, sz.height * 7);
+    
     Mat final;
     final.create(finalSize.height, finalSize.width, CV_8UC3);
    // namedWindow("aa");
@@ -52,17 +57,17 @@ int main( int argc, char** argv )
     for (int i=0; i<IMGCNT; i++) {
         cout << i << endl;
         //Mat H = IG.findTranformMat(0, i);
-        Mat H = IG.findTranformMat(49, i);
+        Mat H = IG.findTranformMat(31, i);
         Mat ig = IG.getTransFormedImg(i, H, finalSize);
         //Mat ig = IG.getAffineTransFormedImg(i, H, finalSize);
         string name = "res"+itos(i);
-        //imwrite(dir + name +".jpg", ig);
+        imwrite(dir + name +".jpg", ig);
         registerImage(final, ig);
     }
     
-   // namedWindow("stitched");
-    imwrite(dir+"parama2.jpg", final);
-    //imshow("stitched", final);
+    //namedWindow("stitched");
+    imwrite(dir+"parama3.jpg", final);
+   // imshow("stitched", final);
     cv::waitKey(0);
     /*
     //cv::initModule_nonfree();

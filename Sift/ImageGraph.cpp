@@ -25,7 +25,9 @@ ImageGraph::ImageGraph(std::vector<std::string> imgs) {
         //cv::destroyWindow("reeeee");
     }
     head.resize(imgcnt);
-    std::cout << "adf" << std::endl;
+    for (int i=0; i<head.size(); i++) {
+        head[i] = NULL;
+    }
     //addAffineEdges();
     addEdges();
 }
@@ -94,12 +96,13 @@ void ImageGraph::calHomographyMatrix(ImageNode img1, ImageNode img2, cv::Mat &on
     std::vector<cv::Point2f> goodpoints1;
     std::vector<cv::Point2f> goodpoints2;
     for (int i=0; i<matches.size(); i++) {
-        if (matches[i].distance <= 0.2 * max_dist) {
+        if (matches[i].distance <=  0.8*max_dist) {
             goodmatches.push_back(matches[i]);
             goodpoints1.push_back(img1.keypoints[matches[i].queryIdx].pt);
             goodpoints2.push_back(img2.keypoints[matches[i].trainIdx].pt);
         }
     }
+    std::cout << goodpoints1.size() << "   aaaaa   " << goodpoints2.size() << std::endl;
     two2one = findHomography(cv::Mat(goodpoints2), cv::Mat(goodpoints1), CV_RANSAC);
     one2two = findHomography(cv::Mat(goodpoints1), cv::Mat(goodpoints2), CV_RANSAC);
 }
@@ -111,6 +114,7 @@ void ImageGraph::addEdges() {
     for(int p=0; p<8; p++) {
         std::cout << "row " << p << std::endl;
         for (int i=1; i<7; i++) {
+
             std::cout << "  img " << i << std::endl;
             cv::Mat one2two, two2one;
             calHomographyMatrix(vecImg[p*7+i-1], vecImg[p*7+i], one2two, two2one);
@@ -123,7 +127,8 @@ void ImageGraph::addEdges() {
             head[p*7+i-1] = im12i;       //add an edge from i-1 to i
         }
     }
-    for (int i=13; i<imgcnt; i+=7) {
+    for (int i=10; i<imgcnt; i+=7) {
+        //if(i == 28) continue;
         std::cout << "  col " << i << std::endl;
         cv::Mat one2two, two2one;
         calHomographyMatrix(vecImg[i-7], vecImg[i], one2two, two2one);
@@ -135,6 +140,15 @@ void ImageGraph::addEdges() {
         im12i->next = head[i-7];
         head[i-7] = im12i;       //add an edge from i-1 to i
     }
+ //   cv::Mat one2two, two2one;
+  //  calHomographyMatrix(vecImg[22], vecImg[29], one2two, two2one);
+    
+  ///  EdgeNode *i2im1 = new EdgeNode(two2one, 22);
+  //  EdgeNode *im12i = new EdgeNode(one2two, 29);
+  //  i2im1->next = head[29];
+  //  head[29] = i2im1;         //add an edge from i to i-1
+  //  im12i->next = head[22];
+  //  head[22] = im12i;       //add an edge from i-1 to i
     
 }
 
@@ -143,8 +157,9 @@ void ImageGraph::addEdges() {
  *and calculate the transform matrix.
  */
 cv::Mat ImageGraph::findTranformMat(int dest, int src) {
+    cv::Mat virMat = (cv::Mat_<double>(3,3) << 1, 0, vecImg[dest].img.cols*7/2, 0, 1, vecImg[dest].img.rows*7/2, 0, 0, 1);
     if (dest == src) {
-        return cv::Mat::eye(3, 3, CV_64F);
+        return virMat;
     }
     BFSNode h(src, cv::Mat::eye(3, 3, CV_64F));
     std::queue<BFSNode> Q;
@@ -155,7 +170,7 @@ cv::Mat ImageGraph::findTranformMat(int dest, int src) {
         BFSNode f = Q.front();
         Q.pop();
         std::cout << f.nodeid << std::endl;
-        if (f.nodeid == dest) return f.H;         // if find, return
+        if (f.nodeid == dest) return virMat * f.H;         // if find, return
         for (EdgeNode *i=head[f.nodeid]; i!=NULL; i=i->next) {
             if (visit[i->nodeid]) continue;
             BFSNode p(i->nodeid, i->H * f.H);
@@ -163,7 +178,7 @@ cv::Mat ImageGraph::findTranformMat(int dest, int src) {
             visit[p.nodeid] = 1;
         }
     }
-    return cv::Mat::zeros(3, 3, CV_64F);
+    return virMat;
 }
 
 /*
