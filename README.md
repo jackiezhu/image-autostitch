@@ -1,4 +1,4 @@
 AutoImageStitch
 ===============
 
-Version 1, which is to be optimalized and only realise image registering.
+This project is the source of my thesis for master's degree. For more information, source code or experiment datasets, mail me via zhuzewei0927@gmail.com.
