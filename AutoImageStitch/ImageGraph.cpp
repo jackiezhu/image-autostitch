@@ -7,6 +7,10 @@
 //
 
 #include "ImageGraph.h"
+#include "ExpUtil.h"
+
+using namespace std;
+using namespace cv;
 
 //constructor of ImageGraph
 //1.read the images from imgs
@@ -16,21 +20,20 @@ ImageGraph::ImageGraph(std::vector<std::string> imgs) {
     int imgcnt = (int)imgs.size();
     this->vecImg.resize(imgcnt);
     for (int i=0; i<imgcnt; i++) {
-        std::cout << imgs[i] << std::endl;
+        //std::cout << imgs[i] << std::endl;
         vecImg[i].img = cv::imread(imgs[i]);
         getSIFTKeyPointsDescriptor(vecImg[i]);
-        // cv::namedWindow("reeeee");
-       // cv::imshow("reeeee", vecImg[i].img);
-        //cv::waitKey(0);
-        //cv::destroyWindow("reeeee");
+
     }
     head.resize(imgcnt);
     for (int i=0; i<head.size(); i++) {
         head[i] = NULL;
     }
-    //addAffineEdges();
+
     addEdges();
+    //addEdgesAutomatic();
 }
+
 void ImageGraph::getSIFTKeyPointsDescriptor(ImageNode &img) {
     cv::SiftFeatureDetector detector;
     cv::Mat imgM = img.img;
@@ -78,7 +81,7 @@ cv::Mat ImageGraph::getTransFormedImg(int imgID, cv::Mat H, cv::Size size) {
 }
 
 
-void ImageGraph::calHomographyMatrix(ImageNode img1, ImageNode img2, cv::Mat &one2two, cv::Mat &two2one) {
+void ImageGraph::calHomographyMatrix(ImageNode img1, ImageNode img2, cv::Mat &two2one) {
 
     //Matching descriptor vectors with a brute force matcher
     cv::BruteForceMatcher< cv::L2<float> > matcher;
@@ -102,44 +105,73 @@ void ImageGraph::calHomographyMatrix(ImageNode img1, ImageNode img2, cv::Mat &on
             goodpoints2.push_back(img2.keypoints[matches[i].trainIdx].pt);
         }
     }
-    std::cout << goodpoints1.size() << "   aaaaa   " << goodpoints2.size() << std::endl;
+    if(goodmatches.size() < 10) return;
+    try {
+    //std::cout << goodpoints1.size() << "   aaaaa   " << goodpoints2.size() << std::endl;
     two2one = findHomography(cv::Mat(goodpoints2), cv::Mat(goodpoints1), CV_RANSAC);
-    one2two = findHomography(cv::Mat(goodpoints1), cv::Mat(goodpoints2), CV_RANSAC);
+    } catch(Exception & e) {
+        return;
+    }
 }
 
 
+void ImageGraph::connectTwoNodes(int ndi, int ndj) {
+    cv::Mat two2one;
+    calHomographyMatrix(vecImg[ndi], vecImg[ndj], two2one);
+    cv::Mat img2;
+    cv::warpPerspective(vecImg[ndj].img, img2, two2one, cv::Size(vecImg[ndi].img.cols, vecImg[ndi].img.rows));
+    double err = getError(vecImg[ndi].img, img2);
+    EdgeNode *i2im1 = new EdgeNode(two2one, ndj, ndi, err);
+    i2im1->next = head[ndj];
+    head[ndj] = i2im1;         //add an edge from ndj to ndi
+}
+
+int row = 8;
 //TODO:how to judge two images are adjecent
 void ImageGraph::addEdges() {
-    int imgcnt = (int) vecImg.size();
-    for(int p=0; p<8; p++) {
-        std::cout << "row " << p << std::endl;
-        for (int i=1; i<7; i++) {
+    
+    for(int i=0; i<row; i++) {
+        for (int j=0; j<7; j++) {
+            if (j>0) {
+                connectTwoNodes(i*7+j-1, i*7+j);
+                connectTwoNodes(i*7+j, i*7+j-1);
+            }
 
-            std::cout << "  img " << i << std::endl;
-            cv::Mat one2two, two2one;
-            calHomographyMatrix(vecImg[p*7+i-1], vecImg[p*7+i], one2two, two2one);
+            if (j<6) {
+                connectTwoNodes(i*7+j+1, i*7+j);
+            }
+             /*if (i>=1) {
+                connectTwoNodes((i-1)*7+j, i*7+j);
+            }
+            if (i<1) {
+                connectTwoNodes((i+1)*7+j, i*7+j);
+            }*/
+
+            //zigzag
+           if ((i&1)) {
+                if (i>=1 && j == 0) {
+                    connectTwoNodes((i-1)*7+j, i*7+j);
+                }
+                if (i<row-1 && j == 6) {
+
+                    connectTwoNodes((i+1)*7+j, i*7+j);
+                    connectTwoNodes(i*7+j, (i+1)*7+j);
+                }
+            }
             
-            EdgeNode *i2im1 = new EdgeNode(two2one, p*7+i-1);
-            EdgeNode *im12i = new EdgeNode(one2two, p*7+i);
-            i2im1->next = head[p*7+i];
-            head[p*7+i] = i2im1;         //add an edge from i to i-1
-            im12i->next = head[p*7+i-1];
-            head[p*7+i-1] = im12i;       //add an edge from i-1 to i
+            if (!(i&1)) {
+                if (i>=1 && j == 6) {
+                    connectTwoNodes((i-1)*7+j, i*7+j);
+                }
+                if (i<row-1 && j == 0) {
+                    connectTwoNodes((i+1)*7+j, i*7+j);
+                    connectTwoNodes(i*7+j, (i+1)*7+j);
+                }
+            }
         }
     }
-    for (int i=10; i<imgcnt; i+=7) {
-        //if(i == 28) continue;
-        std::cout << "  col " << i << std::endl;
-        cv::Mat one2two, two2one;
-        calHomographyMatrix(vecImg[i-7], vecImg[i], one2two, two2one);
-        
-        EdgeNode *i2im1 = new EdgeNode(two2one, i-7);
-        EdgeNode *im12i = new EdgeNode(one2two, i);
-        i2im1->next = head[i];
-        head[i] = i2im1;         //add an edge from i to i-1
-        im12i->next = head[i-7];
-        head[i-7] = im12i;       //add an edge from i-1 to i
-    }
+
+
  //   cv::Mat one2two, two2one;
   //  calHomographyMatrix(vecImg[22], vecImg[29], one2two, two2one);
     
@@ -152,12 +184,100 @@ void ImageGraph::addEdges() {
     
 }
 
+
+void ImageGraph::addEdgesAutomatic() {
+    int sz = (int)vecImg.size();
+    double tt = static_cast<double>(cv::getTickCount());
+
+    for (int i=0; i<sz; i++) {
+        for (int j=0; j<sz; j++) {
+            if (i != j) {
+                
+                cv::Mat two2one;
+                calHomographyMatrix(vecImg[i], vecImg[j], two2one);
+                if (two2one.data) {
+                    cv::Mat img2;
+                    cv::warpPerspective(vecImg[j].img, img2, two2one, cv::Size(vecImg[i].img.cols, vecImg[i].img.rows));
+                    double err = getError(vecImg[i].img, img2);
+                    if (err > 600.0) {
+                        continue;
+                    }
+                    std::cout << j << " to " << i  << " error : " << err << std::endl;
+                    EdgeNode *i2im1 = new EdgeNode(two2one, j, i, err);
+                    i2im1->next = head[j];
+                    head[j] = i2im1;
+                }
+            }
+        }
+    }
+    std::cout << "auto construct the graph: " << (static_cast<double>(cv::getTickCount()) - tt)/cv::getTickFrequency() << "s" << std::endl;
+}
+
+
+
+//dijkstra with is nlogn time complexity
+//pre里存着的H应该是从pre[i]->i的H
+void ImageGraph::dijkstra(int n, int s, vector<double> &min,std::vector<Parent> &pre) {
+    heap h;
+    EdgeNode* t;heap_t e;
+    int v[MAXN],i;
+    for (i=0;i<n;i++)
+        min[i]=inf,v[i]=0,pre[i].pre=-1;
+    h.init();min[e.v=s]=e.d=0,h.ins(e);
+    while (h.del(e))
+        if (!v[e.v])
+            for (v[e.v]=1,t=head[e.v];t;t=t->next)
+                if (!v[t->to]&&min[t->from]+t->err<min[t->to])
+                    pre[t->to].pre=t->from,pre[t->to].H=t->H.inv(),min[e.v=t->to]=e.d=min[t->from]+t->err,h.ins(e);
+}
+
+//rethrn the vector of matrix which can transform from img[i] to the root
+vector<Mat> ImageGraph::findDijkTransformMat() {
+    int root = -1;
+    int sz = (int)vecImg.size();
+    double maxd = 1e10;
+    vector<Parent> pre(sz);
+    vector<elem_t> min(sz);
+    for (int i=0; i<sz; i++) {
+        vector<Parent> temp(sz);
+        dijkstra(sz, i, min, temp);
+        double tot = 0;
+        for (int j=0; j<sz; j++) {
+            tot += min[j];
+        }
+        if (tot < maxd) {
+            maxd = tot;
+            pre = temp;
+            root = i;
+        }
+    }
+   // cout << maxd << " root : " << root << endl;
+   // for (int i=0; i<sz; i++) {
+   //     cout << i << " " << pre[i].pre << endl;
+       // cout << pre[i].H << endl;
+   // }
+    vector<Mat> res(sz);
+    for (int i=0; i<sz; i++) {
+        Mat trans = Mat::eye(3, 3, CV_64F);
+        Mat virMat = (cv::Mat_<double>(3,3) << 1, 0, vecImg[0].img.cols*7/2, 0, 1, vecImg[0].img.rows*7/2, 0, 0, 1);
+        int k = i;
+       // cout << i << " finding path begin...." << endl;
+        while (pre[k].pre != -1) {
+            trans = pre[k].H*trans;
+            k = pre[k].pre;
+           // cout << k << endl;
+        }
+        res[i] = virMat * trans;
+    }
+    return res;
+}
+
 /*
  *use broad first search to find the closest path from src to dest
  *and calculate the transform matrix.
  */
 cv::Mat ImageGraph::findTranformMat(int dest, int src) {
-    cv::Mat virMat = (cv::Mat_<double>(3,3) << 1, 0, vecImg[dest].img.cols*7/2, 0, 1, vecImg[dest].img.rows*7/2, 0, 0, 1);
+    cv::Mat virMat = (cv::Mat_<double>(3,3) << 1, 0, vecImg[dest].img.cols*7/2, 0, 1, vecImg[dest].img.rows*8/2, 0, 0, 1);
     if (dest == src) {
         return virMat;
     }
@@ -169,11 +289,10 @@ cv::Mat ImageGraph::findTranformMat(int dest, int src) {
     while (!Q.empty()) {
         BFSNode f = Q.front();
         Q.pop();
-        std::cout << f.nodeid << std::endl;
         if (f.nodeid == dest) return virMat * f.H;         // if find, return
         for (EdgeNode *i=head[f.nodeid]; i!=NULL; i=i->next) {
-            if (visit[i->nodeid]) continue;
-            BFSNode p(i->nodeid, i->H * f.H);
+            if (visit[i->to]) continue;
+            BFSNode p(i->to, i->H * f.H);
             Q.push(p);
             visit[p.nodeid] = 1;
         }
@@ -186,10 +305,10 @@ cv::Mat ImageGraph::findTranformMat(int dest, int src) {
  */
 void ImageGraph::displayGraph() {
     for (int i=0; i<head.size(); i++) {
-        std::cout << "node:" << i << ":  " << std::endl;
+    std::cout << "node:" << i << ":  " << std::endl;
         EdgeNode *iter = head[i];
         while (iter != NULL) {
-            std::cout << "      node: " <<iter->nodeid << ". transform matrix: " << iter->H << std::endl;
+            std::cout << "      node: " <<iter->to << ". transform matrix: " << iter->H << std::endl;
             iter = iter->next;
         }
     }
@@ -235,12 +354,12 @@ void ImageGraph::calAffineMatrix(ImageNode img1, ImageNode img2, cv::Mat &one2tw
 //cv::imshow("aaa", outp);
   //  cvWaitKey(0);
     cv::Mat t2o = cv::estimateRigidTransform(goodpoints1, goodpoints2, true);
-    std::cout << t2o.rows << std::endl;
+   // std::cout << t2o.rows << std::endl;
     assert(t2o.rows == 3);
     one2two = cv::Mat::zeros(3, 3, CV_64F);
-    std::cout << goodpoints1.size() << " " << goodpoints2.size() << std::endl;
-    std::cout << "t2o:  " << std::endl;
-    std::cout << t2o << std::endl;
+   // std::cout << goodpoints1.size() << " " << goodpoints2.size() << std::endl;
+   // std::cout << "t2o:  " << std::endl;
+   // std::cout << t2o << std::endl;
     cv::Mat l = (cv::Mat_<double>(1,3)<< 0,0,1);
     t2o.row(0).copyTo(one2two.row(0));
     t2o.row(1).copyTo(one2two.row(1));
@@ -278,8 +397,8 @@ void ImageGraph::addAffineEdges() {
         cv::Mat one2two = cv::Mat::zeros(3, 3, CV_64F);
         cv::Mat two2one = cv::Mat::zeros(3, 3, CV_64F);;
         calAffineMatrix(vecImg[i-1], vecImg[i], one2two, two2one);
-        EdgeNode *i2im1 = new EdgeNode(two2one, i-1);
-        EdgeNode *im12i = new EdgeNode(one2two, i);
+        EdgeNode *i2im1 = new EdgeNode(two2one, i, i-1, 0);
+        EdgeNode *im12i = new EdgeNode(one2two, i-1, i, 0);
         i2im1->next = head[i];
         head[i] = i2im1;         //add an edge from i to i-1
         im12i->next = head[i-1];

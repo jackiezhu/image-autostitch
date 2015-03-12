@@ -20,14 +20,23 @@ struct ImageNode {
 struct EdgeNode {
     cv::Mat H;             //the transform matrix
     struct EdgeNode *next; //ptr to the next node of the graph
-    int nodeid;            //ptr to the image
-    EdgeNode(cv::Mat H, int nodeid): H(H), nodeid(nodeid),next(NULL) {};
+    int to;             //ptr to the image
+    int from;
+    double err;
+    EdgeNode(cv::Mat H, int from, int to, double err): H(H), from(from), to(to),next(NULL), err(err){};
 };
 
 struct BFSNode {
     int nodeid;
     cv::Mat H;
     BFSNode(int nodeid, cv::Mat H):nodeid(nodeid), H(H) {}
+};
+
+struct Parent {
+    int pre;
+    cv::Mat H;
+    Parent(int pre, cv::Mat H) : pre(pre), H(H) {}
+    Parent():pre(-1),H(cv::Mat::eye(3, 3, CV_64F)) {}
 };
 
 #endif

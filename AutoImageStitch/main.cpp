@@ -18,119 +18,72 @@
 #include "opencv2/video/tracking.hpp"      //estimate affine matrix with ransac
 
 #include "ImageGraph.h"
+#include "ExpUtil.h"
+
 
 using namespace cv;
 using namespace std;
-void readme();
-string itos(int i);    //convert int to string
-void registerImage(Mat &dest, Mat &src);
-uchar getColor(uchar dest, uchar src);
+
+void getError(cv::Mat imga, cv::Mat imgb, int& totPixl, double &sumerror);
 
 /** @function main */
 int main( int argc, char** argv )
 {
-    
 
-    
-    string dir = "/Users/JackieZhu/Documents/work/research/test/";
+    string dir = "/Users/JackieZhu/Documents/work/research/citytest/";
     const int IMGCNT = 56;
     vector<string> imgs;
     for (int i=0; i<IMGCNT; i++) {
         string nu = itos(i);
-        string img = dir + nu + ".tif";
+        string img = dir + nu + ".JPG";
         //cout << img << endl;
         imgs.push_back(img);
     }
+    double starttime = static_cast<double>(cv::getTickCount());
     cout << imgs.size() << endl;
     ImageGraph IG(imgs);
     IG.displayGraph();
+    //return 0;
+    double tt = static_cast<double>(cv::getTickCount());
+    cout << "construct the graph: " << (static_cast<double>(cv::getTickCount()) - starttime)/cv::getTickFrequency() << "s" << endl;
 
-   // system("pause");
     //the final image's max size should be (images * rows, images * cols)
     Size sz = IG.singleImageSize();
-    Size finalSize = Size(sz.width * 7, sz.height * 7);
-    
+    Size finalSize = Size(sz.width * 7, sz.height * 9);
     Mat final;
     final.create(finalSize.height, finalSize.width, CV_8UC3);
+    double ttt = static_cast<double>(cv::getTickCount());
+    cout << endl << endl;
+    //vector<Mat> trans = IG.findDijkTransformMat();
    // namedWindow("aa");
     //imshow("aa", final);
+    int totPixel = 0;
+    double sumerr = 0;
     for (int i=0; i<IMGCNT; i++) {
-        cout << i << endl;
-        //Mat H = IG.findTranformMat(0, i);
-        Mat H = IG.findTranformMat(31, i);
+        cout << "processing image " << i << "..." << endl;
+        
+        Mat H = IG.findTranformMat(3, i);
         Mat ig = IG.getTransFormedImg(i, H, finalSize);
-        //Mat ig = IG.getAffineTransFormedImg(i, H, finalSize);
+
         string name = "res"+itos(i);
         imwrite(dir + name +".jpg", ig);
+        getError(final, ig, totPixel, sumerr);
         registerImage(final, ig);
+        imwrite(dir + itos(i) +"zigzag.jpg", final);
     }
+    cout << "total pixel : " << totPixel << endl;
+    cout << "sum error : " << fixed << sumerr << endl;
+    cout << "average error : " << fixed << sumerr / totPixel << endl;
+    //cout << "register the graph: " << (static_cast<double>(cv::getTickCount()) - tt)/cv::getTickFrequency() << "s" << endl;
+    tt = static_cast<double>(cv::getTickCount());
+    imwrite(dir+"bgparamazigzag.jpg", final);
     
-    //namedWindow("stitched");
-    imwrite(dir+"parama3.jpg", final);
-   // imshow("stitched", final);
-    cv::waitKey(0);
-    /*
-    //cv::initModule_nonfree();
-    Mat img_1 = imread( "/Users/JackieZhu/Documents/work/research/256主室南壁原始数据150DPI/G9PQ0282.tif");
-    Mat img_2 = imread( "/Users/JackieZhu/Documents/work/research/256主室南壁原始数据150DPI/G9PQ0283.tif");
-    cout << img_1.channels() << endl;
-    if( !img_1.data || !img_2.data )
-    { return -1; }
+    medianBlur(final, final, 5);
+   // cout << "blending the output image: " << (static_cast<double>(cv::getTickCount()) - tt)/cv::getTickFrequency() << "s" << endl;
+   // cout << "total time: " << (static_cast<double>(cv::getTickCount()) - starttime)/cv::getTickFrequency() << "s" << endl;
 
-    SiftFeatureDetector detector;
-    
-    std::vector<KeyPoint> keypoints_1, keypoints_2;
-
-    detector.detect( img_1, keypoints_1 );
-    detector.detect( img_2, keypoints_2 );
-    
-    //-- Step 2: Calculate descriptors (feature vectors)
-    SiftDescriptorExtractor extractor;
-    
-    Mat descriptors_1, descriptors_2;
-    
-    extractor.compute( img_1, keypoints_1, descriptors_1 );
-    extractor.compute( img_2, keypoints_2, descriptors_2 );
-    cout << descriptors_1.cols << endl;
-    //-- Step 3: Matching descriptor vectors with a brute force matcher
-    BruteForceMatcher< L2<float> > matcher;
-    std::vector< DMatch > matches;
-    matcher.match( descriptors_1, descriptors_2, matches );
-    
-    double max_dist = 0;
-    for (int i=0; i<matches.size(); i++) {
-        if (matches[i].distance > max_dist) {
-            max_dist = matches[i].distance;
-        }
-    }
-    
-    vector<DMatch> goodmatches;
-    vector<Point2f> goodpoints1;
-    vector<Point2f> goodpoints2;
-    for (int i=0; i<matches.size(); i++) {
-        if (matches[i].distance <= 0.6 * max_dist) {
-            goodmatches.push_back(matches[i]);
-            goodpoints1.push_back(keypoints_1[matches[i].queryIdx].pt);
-            goodpoints2.push_back(keypoints_2[matches[i].trainIdx].pt);
-        }
-    }
-    Mat img_matches;
-    drawMatches( img_1, keypoints_1, img_2, keypoints_2, matches, img_matches );
-    
-    cv::Mat warp_mat = cv::estimateRigidTransform(goodpoints2, goodpoints1, true);
-    Mat warp_dist;
-    warp_dist = Mat::zeros( img_1.rows, img_1.cols*2, img_1.type() );
-    warpAffine( img_2, warp_dist, warp_mat, warp_dist.size() );
-
-    namedWindow("result1");
-    imshow("result1", warp_dist);
-    Mat ROI(warp_dist, Rect(0, 0, img_1.cols, img_1.rows));
-    img_1.copyTo(ROI);
-    namedWindow("result");
-    imshow("result", warp_dist);
-    imwrite("/Users/JackieZhu/Documents/work/research/Affine.jpg", warp_dist);
-    waitKey(0);
-    */
+    imwrite(dir+"paramazigzag.jpg", final);
+   // cout  << "stitching finished!" << endl;
     return 0;
 }
 
@@ -138,27 +91,30 @@ int main( int argc, char** argv )
 void readme()
 { std::cout << " Usage: ./SIFT <dir> <img1> <img2>... dir must be ended with /" << std::endl; }
 
-string itos(int i)
-{ string ret; if(!i) return "0"; for (; i; i/=10) { ret = (char)(i%10 + '0')+ret; } return ret;}
-
-uchar getColor(uchar dest, uchar src) {
-    if(dest == 0) return src;
-    if(src == 0) return dest;
-    return (src>>1)+ (dest>>1);
-}
-
-void registerImage(Mat &dest, Mat &src) {
-    Mat_<Vec3b>::iterator destbegin = dest.begin<Vec3b>();
-    Mat_<Vec3b>::iterator srcbegin = src.begin<Vec3b>();
-    Mat_<Vec3b>::iterator destend = dest.end<Vec3b>();
-    Mat_<Vec3b>::iterator srcend = dest.end<Vec3b>();
-    
+void getError(cv::Mat imga, cv::Mat imgb, int& totPixl, double &sumerror) {
+    Mat_<Vec3b>::iterator destbegin = imga.begin<Vec3b>();
+    Mat_<Vec3b>::iterator srcbegin = imgb.begin<Vec3b>();
+    Mat_<Vec3b>::iterator destend = imga.end<Vec3b>();
+    Mat_<Vec3b>::iterator srcend = imgb.end<Vec3b>();
+    double ret = 0;
+    int tot = 0;
     while (destbegin != destend && srcbegin != srcend) {
-        for (int i=0; i<3; i++) {
-            (*destbegin)[i] = getColor((*destbegin)[i], (*srcbegin)[i]);
+        if (isBlack((*destbegin)) || isBlack(*srcbegin) ) {
+            destbegin ++;
+            srcbegin ++;
+            continue;
         }
+        for (int i=0; i<3; i++) {
+            double err = (*destbegin)[i]*1.0 - (*srcbegin)[i]*1.0;
+            ret += fabs(err * err);
+            //cout <<err << endl;
+        }
+        tot += 3;
         destbegin ++;
         srcbegin ++;
     }
     
 }
+
+
+
